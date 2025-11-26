@@ -1,4 +1,5 @@
 let context = null;
+let appInitialized = false;
 
 async function setup(audioContext) {
     const patchExportURL = "export/GS1.4.export.json";
@@ -156,10 +157,8 @@ function makeTransportControls(device, context) {
     };
 
     playButton.addEventListener("click", handlePlay);
-    playButton.addEventListener("touchstart", handlePlay, { passive: false });
 
     stopButton.addEventListener("click", handleStop);
-    stopButton.addEventListener("touchstart", handleStop, { passive: false });
 
     stopButton.classList.add("active");
 
@@ -223,7 +222,6 @@ function makeDrumLoopButtons(device, context) {
         };
 
         button.addEventListener("click", handleLoopSelect);
-        button.addEventListener("touchstart", handleLoopSelect, { passive: false });
 
         loopDiv.appendChild(button);
     });
@@ -566,6 +564,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const startApp = async (event) => {
         if (event) event.preventDefault();
 
+        if (appInitialized) {
+            return;
+        }
+
         if (!context) {
             context = new WAContext();
         }
@@ -580,12 +582,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             await setup(context);
+            appInitialized = true;
         } catch (err) {
             alert("Error loading app: " + err.message);
             console.error(err);
         }
     };
 
+    // Use a single click handler; iOS will synthesize a click from a tap
     tapButton.addEventListener('click', startApp, { once: true });
-    tapButton.addEventListener('touchstart', startApp, { once: true });
 });

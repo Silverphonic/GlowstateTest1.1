@@ -1,9 +1,10 @@
-async function setup() {
+let context = null;
+
+async function setup(audioContext) {
     const patchExportURL = "export/GS1.4.export.json";
 
-    // Create AudioContext
-    const WAContext = window.AudioContext || window.webkitAudioContext;
-    const context = new WAContext();
+    // Use provided AudioContext (created in response to a user gesture)
+    const context = audioContext;
 
     // Create gain node and connect it to audio output
     const outputNode = context.createGain();
@@ -92,17 +93,6 @@ async function setup() {
 
     // Connect USB MIDI devices
     connectUSBMIDI(device);
-
-    // Mobile-friendly audio context initialization
-    const startAudioContext = async () => {
-        if (context.state === 'suspended') {
-            await context.resume();
-        }
-    };
-
-    // Handle both click and touch events for mobile
-    document.body.addEventListener('click', startAudioContext);
-    document.body.addEventListener('touchstart', startAudioContext, { once: true });
 
     // Skip if you're not using guardrails.js
     if (typeof guardrails === "function")
@@ -556,7 +546,46 @@ function connectUSBMIDI(device) {
     }
 }
 
-setup().catch(err => {
-    alert("Error loading app: " + err.message);
-    console.error(err);
+// Initialize on explicit user gesture (Tap to Start) for mobile audio compatibility
+document.addEventListener('DOMContentLoaded', () => {
+    const overlay = document.getElementById('tap-overlay');
+    const tapButton = document.getElementById('tap-to-start');
+
+    const WAContext = window.AudioContext || window.webkitAudioContext;
+
+    if (!tapButton) {
+        // Fallback: if overlay/button not found, run setup immediately (desktop/dev)
+        context = new WAContext();
+        setup(context).catch(err => {
+            alert("Error loading app: " + err.message);
+            console.error(err);
+        });
+        return;
+    }
+
+    const startApp = async (event) => {
+        if (event) event.preventDefault();
+
+        if (!context) {
+            context = new WAContext();
+        }
+
+        try {
+            if (context.state === 'suspended') {
+                await context.resume();
+            }
+
+            if (overlay) {
+                overlay.classList.add('hidden');
+            }
+
+            await setup(context);
+        } catch (err) {
+            alert("Error loading app: " + err.message);
+            console.error(err);
+        }
+    };
+
+    tapButton.addEventListener('click', startApp, { once: true });
+    tapButton.addEventListener('touchstart', startApp, { once: true });
 });

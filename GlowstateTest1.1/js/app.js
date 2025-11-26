@@ -95,6 +95,32 @@ async function setup(audioContext) {
     // Connect USB MIDI devices
     connectUSBMIDI(device);
 
+    // Auto-start playback for iOS compatibility
+    // Start transport and set initial loop
+    const loopSelectParam = device.parameters.find(p => p.id === "loop_select");
+    if (loopSelectParam) {
+        loopSelectParam.value = 1; // Start with Loop 1
+    }
+    if (device.node.context.transport) {
+        device.node.context.transport.running = true;
+    }
+
+    // Trigger a play button click to ensure UI is in sync
+    setTimeout(() => {
+        const playButton = document.getElementById("play-button");
+        if (playButton) {
+            playButton.classList.add("active");
+        }
+        const stopButton = document.getElementById("stop-button");
+        if (stopButton) {
+            stopButton.classList.remove("active");
+        }
+        const firstLoopButton = document.querySelector(".loop-button");
+        if (firstLoopButton) {
+            firstLoopButton.classList.add("active");
+        }
+    }, 100);
+
     // Skip if you're not using guardrails.js
     if (typeof guardrails === "function")
         guardrails();
@@ -568,14 +594,19 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        if (!context) {
-            context = new WAContext();
-        }
-
         try {
+            // Create and resume AudioContext in the same user gesture for iOS
+            if (!context) {
+                context = new WAContext();
+            }
+
+            // iOS requires resume to happen in user gesture
             if (context.state === 'suspended') {
                 await context.resume();
             }
+
+            // Ensure context is running before setup
+            await context.resume();
 
             if (overlay) {
                 overlay.classList.add('hidden');

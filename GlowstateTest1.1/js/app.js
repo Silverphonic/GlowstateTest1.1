@@ -82,9 +82,10 @@ async function setup(audioContext) {
     device.node.connect(outputNode);
     console.log('Device connected to output node');
 
-    // Set transport tempo (if transport exists)
+    // Set transport tempo and ensure it's ready (if transport exists)
     if (device.node.context.transport) {
         device.node.context.transport.tempo = 120;
+        // Don't start transport here - we'll do it after everything is set up
     }
 
     // (Optional) Extract the name and rnbo version of the patcher from the description
@@ -103,30 +104,36 @@ async function setup(audioContext) {
     connectUSBMIDI(device);
 
     // Auto-start playback for iOS compatibility
-    // Start transport and set initial loop
-    const loopSelectParam = device.parameters.find(p => p.id === "loop_select");
-    if (loopSelectParam) {
-        loopSelectParam.value = 1; // Start with Loop 1
-        console.log('Loop parameter set to:', loopSelectParam.value);
-    } else {
-        console.warn('loop_select parameter not found!');
-    }
+    // Use setTimeout to ensure everything is fully connected before starting
+    setTimeout(async () => {
+        // Ensure context is still running (critical for iOS)
+        if (context.state === 'suspended') {
+            await context.resume();
+        }
 
-    if (device.node.context.transport) {
-        device.node.context.transport.running = true;
-        console.log('Transport started, running:', device.node.context.transport.running);
-        console.log('Transport tempo:', device.node.context.transport.tempo);
-    } else {
-        console.warn('Transport not available!');
-    }
+        // Start transport and set initial loop
+        const loopSelectParam = device.parameters.find(p => p.id === "loop_select");
+        if (loopSelectParam) {
+            loopSelectParam.value = 1; // Start with Loop 1
+            console.log('Loop parameter set to:', loopSelectParam.value);
+        } else {
+            console.warn('loop_select parameter not found!');
+        }
 
-    // Verify audio context state
-    console.log('Final context state:', context.state);
-    console.log('Context sample rate:', context.sampleRate);
-    console.log('Context current time:', context.currentTime);
+        if (device.node.context.transport) {
+            device.node.context.transport.running = true;
+            console.log('Transport started, running:', device.node.context.transport.running);
+            console.log('Transport tempo:', device.node.context.transport.tempo);
+        } else {
+            console.warn('Transport not available!');
+        }
 
-    // Trigger a play button click to ensure UI is in sync
-    setTimeout(() => {
+        // Verify audio context state
+        console.log('Final context state:', context.state);
+        console.log('Context sample rate:', context.sampleRate);
+        console.log('Context current time:', context.currentTime);
+
+        // Update UI to reflect playing state
         const playButton = document.getElementById("play-button");
         if (playButton) {
             playButton.classList.add("active");
@@ -140,7 +147,7 @@ async function setup(audioContext) {
             firstLoopButton.classList.add("active");
         }
         console.log('UI updated - play active, loop 1 selected');
-    }, 100);
+    }, 250);
 
     // Skip if you're not using guardrails.js
     if (typeof guardrails === "function")
@@ -622,7 +629,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log('AudioContext created, state:', context.state);
             }
 
-            // iOS Web Audio unlock: play a silent buffer to unlock audio
+            // iOS Web Audio unlock - CRITICAL: Multiple strategies
+            // Strategy 1: Play a silent buffer
             const unlockBuffer = context.createBuffer(1, 1, 22050);
             const unlockSource = context.createBufferSource();
             unlockSource.buffer = unlockBuffer;
@@ -630,15 +638,28 @@ document.addEventListener('DOMContentLoaded', () => {
             unlockSource.start(0);
             console.log('Silent buffer played for iOS unlock');
 
-            // Resume AudioContext - critical for iOS
-            if (context.state === 'suspended') {
-                await context.resume();
-                console.log('AudioContext resumed from suspended state');
-            }
+            // Strategy 2: Create and play a brief test tone (very short, nearly inaudible)
+            const testOsc = context.createOscillator();
+            const testGain = context.createGain();
+            testGain.gain.value = 0.001; // Very quiet
+            testOsc.connect(testGain);
+            testGain.connect(context.destination);
+            testOsc.frequency.value = 440;
+            testOsc.start(context.currentTime);
+            testOsc.stop(context.currentTime + 0.01); // 10ms tone
+            console.log('Test tone played for iOS unlock');
 
-            // Double-check context is running
+            // Strategy 3: Multiple resume attempts
             await context.resume();
-            console.log('AudioContext state after resume:', context.state);
+            console.log('First resume, state:', context.state);
+
+            // Small delay then resume again
+            await new Promise(resolve => setTimeout(resolve, 50));
+            await context.resume();
+            console.log('Second resume, state:', context.state);
+
+            // Final state check
+            console.log('AudioContext state after unlock:', context.state);
 
             if (overlay) {
                 overlay.classList.add('hidden');

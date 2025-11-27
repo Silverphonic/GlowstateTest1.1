@@ -146,6 +146,9 @@ function makeTransportControls(device, context) {
     const transportDiv = document.getElementById("transport-controls");
     if (!transportDiv) return;
 
+    // Clear any existing buttons to prevent duplicates
+    transportDiv.innerHTML = '';
+
     const loopSelectParam = device.parameters.find(p => p.id === "loop_select");
     if (!loopSelectParam) return;
 
@@ -163,6 +166,12 @@ function makeTransportControls(device, context) {
 
     const handlePlay = async (e) => {
         if (e) e.preventDefault();
+        // iOS unlock - play silent buffer
+        const unlockBuffer = context.createBuffer(1, 1, 22050);
+        const unlockSource = context.createBufferSource();
+        unlockSource.buffer = unlockBuffer;
+        unlockSource.connect(context.destination);
+        unlockSource.start(0);
         await context.resume();
         if (device.node.context.transport) {
             device.node.context.transport.running = true;
@@ -202,6 +211,9 @@ function makeDrumLoopButtons(device, context) {
     const loopDiv = document.getElementById("drum-loop-buttons");
     if (!loopDiv) return;
 
+    // Clear any existing buttons to prevent duplicates
+    loopDiv.innerHTML = '';
+
     const loopSelectParam = device.parameters.find(p => p.id === "loop_select");
     if (!loopSelectParam) return;
 
@@ -224,6 +236,12 @@ function makeDrumLoopButtons(device, context) {
 
         const handleLoopSelect = async (e) => {
             if (e) e.preventDefault();
+            // iOS unlock - play silent buffer
+            const unlockBuffer = context.createBuffer(1, 1, 22050);
+            const unlockSource = context.createBufferSource();
+            unlockSource.buffer = unlockBuffer;
+            unlockSource.connect(context.destination);
+            unlockSource.start(0);
             await context.resume();
             if (device.node.context.transport) {
                 device.node.context.transport.running = true;
@@ -595,17 +613,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            // Create and resume AudioContext in the same user gesture for iOS
+            // Create AudioContext in the user gesture for iOS
             if (!context) {
                 context = new WAContext();
             }
 
-            // iOS requires resume to happen in user gesture
-            if (context.state === 'suspended') {
-                await context.resume();
-            }
+            // iOS Web Audio unlock - play a silent buffer to unlock audio
+            const unlockBuffer = context.createBuffer(1, 1, 22050);
+            const unlockSource = context.createBufferSource();
+            unlockSource.buffer = unlockBuffer;
+            unlockSource.connect(context.destination);
+            unlockSource.start(0);
 
-            // Ensure context is running before setup
+            // Resume context (required for iOS)
             await context.resume();
 
             if (overlay) {

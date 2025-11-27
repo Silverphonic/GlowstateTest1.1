@@ -103,51 +103,11 @@ async function setup(audioContext) {
     // Connect USB MIDI devices
     connectUSBMIDI(device);
 
-    // Auto-start playback for iOS compatibility
-    // Use setTimeout to ensure everything is fully connected before starting
-    setTimeout(async () => {
-        // Ensure context is still running (critical for iOS)
-        if (context.state === 'suspended') {
-            await context.resume();
-        }
-
-        // Start transport and set initial loop
-        const loopSelectParam = device.parameters.find(p => p.id === "loop_select");
-        if (loopSelectParam) {
-            loopSelectParam.value = 1; // Start with Loop 1
-            console.log('Loop parameter set to:', loopSelectParam.value);
-        } else {
-            console.warn('loop_select parameter not found!');
-        }
-
-        if (device.node.context.transport) {
-            device.node.context.transport.running = true;
-            console.log('Transport started, running:', device.node.context.transport.running);
-            console.log('Transport tempo:', device.node.context.transport.tempo);
-        } else {
-            console.warn('Transport not available!');
-        }
-
-        // Verify audio context state
-        console.log('Final context state:', context.state);
-        console.log('Context sample rate:', context.sampleRate);
-        console.log('Context current time:', context.currentTime);
-
-        // Update UI to reflect playing state
-        const playButton = document.getElementById("play-button");
-        if (playButton) {
-            playButton.classList.add("active");
-        }
-        const stopButton = document.getElementById("stop-button");
-        if (stopButton) {
-            stopButton.classList.remove("active");
-        }
-        const firstLoopButton = document.querySelector(".loop-button");
-        if (firstLoopButton) {
-            firstLoopButton.classList.add("active");
-        }
-        console.log('UI updated - play active, loop 1 selected');
-    }, 250);
+    // Don't auto-start on iOS - user must tap PLAY or a LOOP button
+    // Just set up the initial state
+    console.log('Setup complete - ready for user interaction');
+    console.log('Context state:', context.state);
+    console.log('Context sample rate:', context.sampleRate);
 
     // Skip if you're not using guardrails.js
     if (typeof guardrails === "function")
@@ -246,9 +206,7 @@ function makeDrumLoopButtons(device, context) {
         button.className = "loop-button";
         button.dataset.loopValue = loop.value;
 
-        if (index === 0) {
-            button.classList.add("active");
-        }
+        // Don't pre-select any loop - let user choose
 
         const handleLoopSelect = async (e) => {
             if (e) e.preventDefault();

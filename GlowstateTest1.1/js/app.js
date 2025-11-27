@@ -608,82 +608,78 @@ function connectUSBMIDI(device) {
     }
 }
 
-// Initialize on explicit user gesture (Tap to Start) for mobile audio compatibility
-document.addEventListener('DOMContentLoaded', () => {
+// Initialize on first LOOP button click for maximum iOS compatibility
+document.addEventListener('DOMContentLoaded', async () => {
     const overlay = document.getElementById('tap-overlay');
-    const tapButton = document.getElementById('tap-to-start');
-
     const WAContext = window.AudioContext || window.webkitAudioContext;
 
-    if (!tapButton) {
-        // Fallback: if overlay/button not found, run setup immediately (desktop/dev)
+    // Create initial loop buttons that will initialize everything on first click
+    const loopDiv = document.getElementById('drum-loop-buttons');
+    if (loopDiv && overlay) {
+        const drumLoops = [
+            { name: "LOOP 1", value: 1 },
+            { name: "LOOP 2", value: 2 },
+            { name: "LOOP 3", value: 3 },
+            { name: "LOOP 4", value: 4 }
+        ];
+
+        drumLoops.forEach((loop) => {
+            const button = document.createElement("button");
+            button.textContent = loop.name;
+            button.className = "loop-button";
+            button.dataset.loopValue = loop.value;
+
+            button.addEventListener('click', async (e) => {
+                e.preventDefault();
+
+                if (!appInitialized) {
+                    console.log('First click - initializing everything in this gesture');
+
+                    // Create AudioContext in THIS gesture
+                    context = new WAContext();
+                    console.log('AudioContext created, state:', context.state);
+
+                    // Play test beep to unlock
+                    const testOsc = context.createOscillator();
+                    const testGain = context.createGain();
+                    testGain.gain.value = 0.3;
+                    testOsc.connect(testGain);
+                    testGain.connect(context.destination);
+                    testOsc.frequency.value = 440;
+                    testOsc.start(context.currentTime);
+                    testOsc.stop(context.currentTime + 0.5);
+                    console.log('Test beep playing');
+
+                    await context.resume();
+                    console.log('Context resumed, state:', context.state);
+
+                    // Hide overlay
+                    if (overlay) {
+                        overlay.classList.add('hidden');
+                    }
+
+                    // Initialize RNBO
+                    await setup(context);
+                    appInitialized = true;
+
+                    // Now the actual buttons are created, click the right one
+                    setTimeout(() => {
+                        const realButton = document.querySelector(`[data-loop-value="${loop.value}"]`);
+                        if (realButton && realButton !== button) {
+                            realButton.click();
+                        }
+                    }, 100);
+                }
+            }, { once: true });
+
+            loopDiv.appendChild(button);
+        });
+    } else {
+        // Desktop: initialize immediately
         context = new WAContext();
         setup(context).catch(err => {
             alert("Error loading app: " + err.message);
             console.error(err);
         });
-        return;
     }
-
-    const startApp = async (event) => {
-        if (event) event.preventDefault();
-
-        if (appInitialized) {
-            return;
-        }
-
-        try {
-            // Create AudioContext in the same user gesture for iOS
-            if (!context) {
-                context = new WAContext();
-                console.log('AudioContext created, state:', context.state);
-            }
-
-            // iOS Web Audio unlock - CRITICAL: Multiple strategies
-            // Strategy 1: Play a silent buffer
-            const unlockBuffer = context.createBuffer(1, 1, 22050);
-            const unlockSource = context.createBufferSource();
-            unlockSource.buffer = unlockBuffer;
-            unlockSource.connect(context.destination);
-            unlockSource.start(0);
-            console.log('Silent buffer played for iOS unlock');
-
-            // Strategy 2: Create and play a brief test tone (very short, nearly inaudible)
-            const testOsc = context.createOscillator();
-            const testGain = context.createGain();
-            testGain.gain.value = 0.001; // Very quiet
-            testOsc.connect(testGain);
-            testGain.connect(context.destination);
-            testOsc.frequency.value = 440;
-            testOsc.start(context.currentTime);
-            testOsc.stop(context.currentTime + 0.01); // 10ms tone
-            console.log('Test tone played for iOS unlock');
-
-            // Strategy 3: Multiple resume attempts
-            await context.resume();
-            console.log('First resume, state:', context.state);
-
-            // Small delay then resume again
-            await new Promise(resolve => setTimeout(resolve, 50));
-            await context.resume();
-            console.log('Second resume, state:', context.state);
-
-            // Final state check
-            console.log('AudioContext state after unlock:', context.state);
-
-            if (overlay) {
-                overlay.classList.add('hidden');
-            }
-
-            await setup(context);
-            appInitialized = true;
-            console.log('App initialized successfully');
-        } catch (err) {
-            alert("Error loading app: " + err.message);
-            console.error(err);
-        }
-    };
-
-    // Use a single click handler; iOS will synthesize a click from a tap
-    tapButton.addEventListener('click', startApp, { once: true });
 });

@@ -245,6 +245,17 @@ function makeDrumLoopButtons(device, context) {
             unlockSource.connect(context.destination);
             unlockSource.start(0);
 
+            // TEST: Play a 0.5 second beep to verify audio is working
+            const testOsc = context.createOscillator();
+            const testGain = context.createGain();
+            testGain.gain.value = 0.3;
+            testOsc.connect(testGain);
+            testGain.connect(context.destination);
+            testOsc.frequency.value = 440;
+            testOsc.start(context.currentTime);
+            testOsc.stop(context.currentTime + 0.5);
+            console.log('TEST: Playing 440Hz beep for 0.5s to verify audio works');
+
             await context.resume();
             console.log('Loop', loop.value, 'clicked - context state:', context.state);
 

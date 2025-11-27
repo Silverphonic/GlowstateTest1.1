@@ -104,7 +104,19 @@ async function setup(audioContext) {
     connectUSBMIDI(device);
 
     // Don't auto-start on iOS - user must tap PLAY or a LOOP button
-    // Just set up the initial state
+    // Explicitly set to stopped state
+    const loopSelectParam = device.parameters.find(p => p.id === "loop_select");
+    if (loopSelectParam) {
+        loopSelectParam.value = 0; // Explicitly set to 0 (stopped)
+        console.log('Loop parameter explicitly set to 0 (stopped)');
+    }
+
+    // Make sure transport is stopped
+    if (device.node.context.transport) {
+        device.node.context.transport.running = false;
+        console.log('Transport explicitly stopped');
+    }
+
     console.log('Setup complete - ready for user interaction');
     console.log('Context state:', context.state);
     console.log('Context sample rate:', context.sampleRate);
@@ -151,11 +163,26 @@ function makeTransportControls(device, context) {
 
     const handlePlay = async (e) => {
         if (e) e.preventDefault();
+
+        // Aggressive iOS unlock - play silent buffer in THIS user gesture
+        const unlockBuffer = context.createBuffer(1, 1, 22050);
+        const unlockSource = context.createBufferSource();
+        unlockSource.buffer = unlockBuffer;
+        unlockSource.connect(context.destination);
+        unlockSource.start(0);
+
         await context.resume();
+        console.log('Play clicked - context state:', context.state);
+
+        // Set loop value BEFORE starting transport
+        loopSelectParam.value = lastLoopValue;
+        console.log('Loop value set to:', lastLoopValue);
+
         if (device.node.context.transport) {
             device.node.context.transport.running = true;
+            console.log('Transport started');
         }
-        loopSelectParam.value = lastLoopValue;
+
         playButton.classList.add("active");
         stopButton.classList.remove("active");
     };
@@ -210,11 +237,25 @@ function makeDrumLoopButtons(device, context) {
 
         const handleLoopSelect = async (e) => {
             if (e) e.preventDefault();
+
+            // Aggressive iOS unlock - play silent buffer in THIS user gesture
+            const unlockBuffer = context.createBuffer(1, 1, 22050);
+            const unlockSource = context.createBufferSource();
+            unlockSource.buffer = unlockBuffer;
+            unlockSource.connect(context.destination);
+            unlockSource.start(0);
+
             await context.resume();
+            console.log('Loop', loop.value, 'clicked - context state:', context.state);
+
+            // Set loop value BEFORE starting transport
+            loopSelectParam.value = loop.value;
+            console.log('Loop parameter set to:', loop.value);
+
             if (device.node.context.transport) {
                 device.node.context.transport.running = true;
+                console.log('Transport started');
             }
-            loopSelectParam.value = loop.value;
 
             document.querySelectorAll(".loop-button").forEach(btn => {
                 btn.classList.remove("active");

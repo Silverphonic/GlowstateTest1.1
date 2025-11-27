@@ -7,13 +7,10 @@ async function setup(audioContext) {
     // Use provided AudioContext (created in response to a user gesture)
     const context = audioContext;
 
-    console.log('Setup starting with context state:', context.state);
-
     // Create gain node and connect it to audio output
     const outputNode = context.createGain();
     outputNode.gain.value = 1.0;
     outputNode.connect(context.destination);
-    console.log('Output node created and connected');
     
     // Fetch the exported patcher
     let response, patcher;
@@ -61,9 +58,7 @@ async function setup(audioContext) {
     let device;
     try {
         device = await RNBO.createDevice({ context, patcher });
-        console.log('RNBO device created successfully');
     } catch (err) {
-        console.error('Error creating RNBO device:', err);
         if (typeof guardrails === "function") {
             guardrails({ error: err });
         } else {
@@ -75,17 +70,14 @@ async function setup(audioContext) {
     // (Optional) Load the samples
     if (dependencies.length) {
         await device.loadDataBufferDependencies(dependencies);
-        console.log('Dependencies loaded:', dependencies.length);
     }
 
     // Connect the device to the web audio graph
     device.node.connect(outputNode);
-    console.log('Device connected to output node');
 
-    // Set transport tempo and ensure it's ready (if transport exists)
+    // Set transport tempo (if transport exists)
     if (device.node.context.transport) {
         device.node.context.transport.tempo = 120;
-        // Don't start transport here - we'll do it after everything is set up
     }
 
     // (Optional) Extract the name and rnbo version of the patcher from the description
@@ -103,23 +95,31 @@ async function setup(audioContext) {
     // Connect USB MIDI devices
     connectUSBMIDI(device);
 
-    // Don't auto-start on iOS - user must tap PLAY or a LOOP button
-    // Explicitly set to stopped state
+    // Auto-start playback for iOS compatibility
+    // Start transport and set initial loop
     const loopSelectParam = device.parameters.find(p => p.id === "loop_select");
     if (loopSelectParam) {
-        loopSelectParam.value = 0; // Explicitly set to 0 (stopped)
-        console.log('Loop parameter explicitly set to 0 (stopped)');
+        loopSelectParam.value = 1; // Start with Loop 1
     }
-
-    // Make sure transport is stopped
     if (device.node.context.transport) {
-        device.node.context.transport.running = false;
-        console.log('Transport explicitly stopped');
+        device.node.context.transport.running = true;
     }
 
-    console.log('Setup complete - ready for user interaction');
-    console.log('Context state:', context.state);
-    console.log('Context sample rate:', context.sampleRate);
+    // Trigger a play button click to ensure UI is in sync
+    setTimeout(() => {
+        const playButton = document.getElementById("play-button");
+        if (playButton) {
+            playButton.classList.add("active");
+        }
+        const stopButton = document.getElementById("stop-button");
+        if (stopButton) {
+            stopButton.classList.remove("active");
+        }
+        const firstLoopButton = document.querySelector(".loop-button");
+        if (firstLoopButton) {
+            firstLoopButton.classList.add("active");
+        }
+    }, 100);
 
     // Skip if you're not using guardrails.js
     if (typeof guardrails === "function")
@@ -163,26 +163,11 @@ function makeTransportControls(device, context) {
 
     const handlePlay = async (e) => {
         if (e) e.preventDefault();
-
-        // Aggressive iOS unlock - play silent buffer in THIS user gesture
-        const unlockBuffer = context.createBuffer(1, 1, 22050);
-        const unlockSource = context.createBufferSource();
-        unlockSource.buffer = unlockBuffer;
-        unlockSource.connect(context.destination);
-        unlockSource.start(0);
-
         await context.resume();
-        console.log('Play clicked - context state:', context.state);
-
-        // Set loop value BEFORE starting transport
-        loopSelectParam.value = lastLoopValue;
-        console.log('Loop value set to:', lastLoopValue);
-
         if (device.node.context.transport) {
             device.node.context.transport.running = true;
-            console.log('Transport started');
         }
-
+        loopSelectParam.value = lastLoopValue;
         playButton.classList.add("active");
         stopButton.classList.remove("active");
     };
@@ -233,40 +218,17 @@ function makeDrumLoopButtons(device, context) {
         button.className = "loop-button";
         button.dataset.loopValue = loop.value;
 
-        // Don't pre-select any loop - let user choose
+        if (index === 0) {
+            button.classList.add("active");
+        }
 
         const handleLoopSelect = async (e) => {
             if (e) e.preventDefault();
-
-            // Aggressive iOS unlock - play silent buffer in THIS user gesture
-            const unlockBuffer = context.createBuffer(1, 1, 22050);
-            const unlockSource = context.createBufferSource();
-            unlockSource.buffer = unlockBuffer;
-            unlockSource.connect(context.destination);
-            unlockSource.start(0);
-
-            // TEST: Play a 0.5 second beep to verify audio is working
-            const testOsc = context.createOscillator();
-            const testGain = context.createGain();
-            testGain.gain.value = 0.3;
-            testOsc.connect(testGain);
-            testGain.connect(context.destination);
-            testOsc.frequency.value = 440;
-            testOsc.start(context.currentTime);
-            testOsc.stop(context.currentTime + 0.5);
-            console.log('TEST: Playing 440Hz beep for 0.5s to verify audio works');
-
             await context.resume();
-            console.log('Loop', loop.value, 'clicked - context state:', context.state);
-
-            // Set loop value BEFORE starting transport
-            loopSelectParam.value = loop.value;
-            console.log('Loop parameter set to:', loop.value);
-
             if (device.node.context.transport) {
                 device.node.context.transport.running = true;
-                console.log('Transport started');
             }
+            loopSelectParam.value = loop.value;
 
             document.querySelectorAll(".loop-button").forEach(btn => {
                 btn.classList.remove("active");
@@ -608,78 +570,56 @@ function connectUSBMIDI(device) {
     }
 }
 
-// Initialize on first LOOP button click for maximum iOS compatibility
-document.addEventListener('DOMContentLoaded', async () => {
+// Initialize on explicit user gesture (Tap to Start) for mobile audio compatibility
+document.addEventListener('DOMContentLoaded', () => {
     const overlay = document.getElementById('tap-overlay');
+    const tapButton = document.getElementById('tap-to-start');
+
     const WAContext = window.AudioContext || window.webkitAudioContext;
 
-    // Create initial loop buttons that will initialize everything on first click
-    const loopDiv = document.getElementById('drum-loop-buttons');
-    if (loopDiv && overlay) {
-        const drumLoops = [
-            { name: "LOOP 1", value: 1 },
-            { name: "LOOP 2", value: 2 },
-            { name: "LOOP 3", value: 3 },
-            { name: "LOOP 4", value: 4 }
-        ];
-
-        drumLoops.forEach((loop) => {
-            const button = document.createElement("button");
-            button.textContent = loop.name;
-            button.className = "loop-button";
-            button.dataset.loopValue = loop.value;
-
-            button.addEventListener('click', async (e) => {
-                e.preventDefault();
-
-                if (!appInitialized) {
-                    console.log('First click - initializing everything in this gesture');
-
-                    // Create AudioContext in THIS gesture
-                    context = new WAContext();
-                    console.log('AudioContext created, state:', context.state);
-
-                    // Play test beep to unlock
-                    const testOsc = context.createOscillator();
-                    const testGain = context.createGain();
-                    testGain.gain.value = 0.3;
-                    testOsc.connect(testGain);
-                    testGain.connect(context.destination);
-                    testOsc.frequency.value = 440;
-                    testOsc.start(context.currentTime);
-                    testOsc.stop(context.currentTime + 0.5);
-                    console.log('Test beep playing');
-
-                    await context.resume();
-                    console.log('Context resumed, state:', context.state);
-
-                    // Hide overlay
-                    if (overlay) {
-                        overlay.classList.add('hidden');
-                    }
-
-                    // Initialize RNBO
-                    await setup(context);
-                    appInitialized = true;
-
-                    // Now the actual buttons are created, click the right one
-                    setTimeout(() => {
-                        const realButton = document.querySelector(`[data-loop-value="${loop.value}"]`);
-                        if (realButton && realButton !== button) {
-                            realButton.click();
-                        }
-                    }, 100);
-                }
-            }, { once: true });
-
-            loopDiv.appendChild(button);
-        });
-    } else {
-        // Desktop: initialize immediately
+    if (!tapButton) {
+        // Fallback: if overlay/button not found, run setup immediately (desktop/dev)
         context = new WAContext();
         setup(context).catch(err => {
             alert("Error loading app: " + err.message);
             console.error(err);
         });
+        return;
     }
+
+    const startApp = async (event) => {
+        if (event) event.preventDefault();
+
+        if (appInitialized) {
+            return;
+        }
+
+        try {
+            // Create and resume AudioContext in the same user gesture for iOS
+            if (!context) {
+                context = new WAContext();
+            }
+
+            // iOS requires resume to happen in user gesture
+            if (context.state === 'suspended') {
+                await context.resume();
+            }
+
+            // Ensure context is running before setup
+            await context.resume();
+
+            if (overlay) {
+                overlay.classList.add('hidden');
+            }
+
+            await setup(context);
+            appInitialized = true;
+        } catch (err) {
+            alert("Error loading app: " + err.message);
+            console.error(err);
+        }
+    };
+
+    // Use a single click handler; iOS will synthesize a click from a tap
+    tapButton.addEventListener('click', startApp, { once: true });
 });

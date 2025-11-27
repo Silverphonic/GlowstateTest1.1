@@ -176,6 +176,7 @@ body {
         rgba(10, 10, 15, 0.95));
     backdrop-filter: blur(10px);
     transition: opacity 0.4s ease;
+    pointer-events: none; /* Let clicks pass through to buttons */
 }
 
 .tap-overlay.hidden {

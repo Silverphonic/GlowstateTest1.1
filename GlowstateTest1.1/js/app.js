@@ -7,10 +7,13 @@ async function setup(audioContext) {
     // Use provided AudioContext (created in response to a user gesture)
     const context = audioContext;
 
+    console.log('Setup starting with context state:', context.state);
+
     // Create gain node and connect it to audio output
     const outputNode = context.createGain();
     outputNode.gain.value = 1.0;
     outputNode.connect(context.destination);
+    console.log('Output node created and connected');
     
     // Fetch the exported patcher
     let response, patcher;
@@ -58,7 +61,9 @@ async function setup(audioContext) {
     let device;
     try {
         device = await RNBO.createDevice({ context, patcher });
+        console.log('RNBO device created successfully');
     } catch (err) {
+        console.error('Error creating RNBO device:', err);
         if (typeof guardrails === "function") {
             guardrails({ error: err });
         } else {
@@ -70,10 +75,12 @@ async function setup(audioContext) {
     // (Optional) Load the samples
     if (dependencies.length) {
         await device.loadDataBufferDependencies(dependencies);
+        console.log('Dependencies loaded:', dependencies.length);
     }
 
     // Connect the device to the web audio graph
     device.node.connect(outputNode);
+    console.log('Device connected to output node');
 
     // Set transport tempo (if transport exists)
     if (device.node.context.transport) {
@@ -100,10 +107,23 @@ async function setup(audioContext) {
     const loopSelectParam = device.parameters.find(p => p.id === "loop_select");
     if (loopSelectParam) {
         loopSelectParam.value = 1; // Start with Loop 1
+        console.log('Loop parameter set to:', loopSelectParam.value);
+    } else {
+        console.warn('loop_select parameter not found!');
     }
+
     if (device.node.context.transport) {
         device.node.context.transport.running = true;
+        console.log('Transport started, running:', device.node.context.transport.running);
+        console.log('Transport tempo:', device.node.context.transport.tempo);
+    } else {
+        console.warn('Transport not available!');
     }
+
+    // Verify audio context state
+    console.log('Final context state:', context.state);
+    console.log('Context sample rate:', context.sampleRate);
+    console.log('Context current time:', context.currentTime);
 
     // Trigger a play button click to ensure UI is in sync
     setTimeout(() => {
@@ -119,6 +139,7 @@ async function setup(audioContext) {
         if (firstLoopButton) {
             firstLoopButton.classList.add("active");
         }
+        console.log('UI updated - play active, loop 1 selected');
     }, 100);
 
     // Skip if you're not using guardrails.js
@@ -595,18 +616,29 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            // Create and resume AudioContext in the same user gesture for iOS
+            // Create AudioContext in the same user gesture for iOS
             if (!context) {
                 context = new WAContext();
+                console.log('AudioContext created, state:', context.state);
             }
 
-            // iOS requires resume to happen in user gesture
+            // iOS Web Audio unlock: play a silent buffer to unlock audio
+            const unlockBuffer = context.createBuffer(1, 1, 22050);
+            const unlockSource = context.createBufferSource();
+            unlockSource.buffer = unlockBuffer;
+            unlockSource.connect(context.destination);
+            unlockSource.start(0);
+            console.log('Silent buffer played for iOS unlock');
+
+            // Resume AudioContext - critical for iOS
             if (context.state === 'suspended') {
                 await context.resume();
+                console.log('AudioContext resumed from suspended state');
             }
 
-            // Ensure context is running before setup
+            // Double-check context is running
             await context.resume();
+            console.log('AudioContext state after resume:', context.state);
 
             if (overlay) {
                 overlay.classList.add('hidden');
@@ -614,6 +646,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             await setup(context);
             appInitialized = true;
+            console.log('App initialized successfully');
         } catch (err) {
             alert("Error loading app: " + err.message);
             console.error(err);
